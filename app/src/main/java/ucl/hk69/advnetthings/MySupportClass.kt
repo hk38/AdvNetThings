@@ -1,6 +1,5 @@
 package ucl.hk69.advnetthings
 
-import android.bluetooth.BluetoothAdapter
 import android.util.Base64
 import java.math.BigInteger
 import java.security.KeyFactory
@@ -27,8 +26,6 @@ class MySupportClass {
     val STATE_GREEN = 5
     val STATE_OFF = 6
     val DISCONNECT = 7
-
-    var btAdapter: BluetoothAdapter? = null
 
     fun genKeyPair(): KeyPair {
         val keyGen: KeyPairGenerator = KeyPairGenerator.getInstance("DiffieHellman")

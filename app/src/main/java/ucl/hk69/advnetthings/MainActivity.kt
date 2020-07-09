@@ -69,8 +69,8 @@ class MainActivity : AppCompatActivity() {
                 btDis.close()
                 btDos.close()
                 btSoc.close()
-                svBtSoc.close()
             }
+            svBtSoc.close()
 
             while (true) {
                 val soc = svSoc!!.accept()
