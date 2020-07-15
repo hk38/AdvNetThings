@@ -1,35 +1,31 @@
 package ucl.hk69.advnetthings
 
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
-import android.content.SharedPreferences
-import android.graphics.Color
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.os.FileUtils
-import android.widget.Toast
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.lang.Exception
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import javax.crypto.interfaces.DHPrivateKey
 import javax.crypto.interfaces.DHPublicKey
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
     private val mySup = MySupportClass()
-    val ip = "192.168.1.100"
+    val ip = "192.168.1.25"
     var svSoc: ServerSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        Log.d("setup", "GPIO周りの準備")
 
         val manager = PeripheralManager.getInstance()
         val ledKaigi = setLed("BCM4", manager)
@@ -37,70 +33,87 @@ class MainActivity : AppCompatActivity() {
         val ledYellow = setLed("BCM27", manager)
         val ledGreen = setLed("BCM22", manager)
 
-        val keyPair = mySup.genKeyPair()
-        val pubKey = keyPair.public as DHPublicKey
-        val paramSpec = pubKey.params
-        val p = paramSpec.p
-        val g = paramSpec.g
-
-        val privKey = keyPair.private as DHPrivateKey
-        val y = pubKey.y
-
-        Toast.makeText(this, "genDHKey", Toast.LENGTH_SHORT).show()
+        Log.d("setup", "GPIO周りの準備完了")
 
         GlobalScope.launch {
             val svBtSoc = BluetoothAdapter.getDefaultAdapter()
                 .listenUsingRfcommWithServiceRecord("test", mySup.MY_UUID)
+            Log.d("bluetooth", "svBtSock作成&受信待機")
             val btSoc = svBtSoc.accept()
+            Log.d("bluetooth", "受信")
             val btDos = DataOutputStream(btSoc.outputStream)
             val btDis = DataInputStream(btSoc.inputStream)
 
-            btDos.writeUTF(p.toString())
-            btDos.writeUTF(g.toString())
-            btDos.writeUTF(y.toString())
+            val p = btDis.readUTF().toBigInteger()
+            val g = btDis.readUTF().toBigInteger()
             val othersY = btDis.readUTF().toBigInteger()
+            Log.d("dh", "$p \n $g \n $othersY")
+
+            val keyPair = mySup.makeKeyPair(p, g)
+            val privKey = keyPair.private as DHPrivateKey
+            val pubKey = keyPair.public as DHPublicKey
+            val y = pubKey.y
+            Log.d("dh", "送信：$y")
+            btDos.writeUTF(y.toString())
 
             val secKey = mySup.genSecKey(p, g, othersY, privKey)
+            Log.d("make secKey", "鍵生成完了")
 
             svSoc = ServerSocket()
             svSoc!!.bind(InetSocketAddress(ip, mySup.PORT))
+            Log.d("debug", "サーバソケット作成")
 
-            if (btSoc.isConnected) {
-                btDis.close()
-                btDos.close()
-                btSoc.close()
+            if (btSoc != null) {
+                try {
+                    btDis.close()
+                    btDos.close()
+                    btSoc.close()
+                    svBtSoc.close()
+                }catch (e:Exception){
+                    e.printStackTrace()
+                }
             }
-            svBtSoc.close()
 
             while (true) {
-                val soc = svSoc!!.accept()
-                val dis = DataInputStream(soc.getInputStream())
+                Log.d("debug", "受信待機")
+                var soc: Socket? = svSoc!!.accept()
+                val dis = DataInputStream(soc!!.getInputStream())
+                val dos = DataOutputStream(soc.getOutputStream())
+                Log.d("debug", "DIS作成 $dis")
 
-                while (soc.isConnected) {
-                    when (dis.readInt()) {
-                        mySup.KAIGI_ON -> ledKaigi.value = true
-                        mySup.KAIGI_OFF -> ledKaigi.value = false
-                        mySup.STATE_RED -> {
-                            ledRed.value = true
-                            ledYellow.value = false
-                            ledGreen.value = false
-                        }
-                        mySup.STATE_YELLOW -> {
-                            ledRed.value = false
-                            ledYellow.value = true
-                            ledGreen.value = false
-                        }
-                        mySup.STATE_GREEN -> {
-                            ledRed.value = false
-                            ledYellow.value = false
-                            ledGreen.value = true
-                        }
-                        mySup.DISCONNECT ->{
-                            if(soc.isConnected) {
-                                dis.close()
-                                soc.close()
+                while (soc != null) {
+                    try {
+                        val temp = dis.readByte()
+                        Log.d("receive message", "$temp")
+
+                        when (temp.toInt()) {
+                            mySup.KAIGI_ON -> ledKaigi.value = true
+                            mySup.KAIGI_OFF -> ledKaigi.value = false
+                            mySup.STATE_RED -> {
+                                ledRed.value = true
+                                ledYellow.value = false
+                                ledGreen.value = false
+                            }
+                            mySup.STATE_YELLOW -> {
+                                ledRed.value = false
+                                ledYellow.value = true
+                                ledGreen.value = false
+                            }
+                            mySup.STATE_GREEN -> {
+                                ledRed.value = false
+                                ledYellow.value = false
+                                ledGreen.value = true
+                            }
+                            mySup.STATE_OFF ->{
+                                ledRed.value = false
+                                ledYellow.value = false
+                                ledGreen.value = false
                             }
                         }
+
+                    }catch (e:Exception){
+                        e.printStackTrace()
+                        soc = null
                     }
                 }
             }
@@ -112,7 +125,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    fun setLed(pin:String, manager:PeripheralManager):Gpio{
+    private fun setLed(pin:String, manager:PeripheralManager):Gpio{
         val led = manager.openGpio(pin)
         led.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
         led.setActiveType(Gpio.ACTIVE_HIGH)
