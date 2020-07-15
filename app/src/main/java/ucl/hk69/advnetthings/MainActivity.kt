@@ -3,6 +3,7 @@ package ucl.hk69.advnetthings
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.os.Bundle
+import android.util.Base64
 import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
@@ -15,6 +16,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import javax.crypto.interfaces.DHPrivateKey
 import javax.crypto.interfaces.DHPublicKey
+import javax.crypto.spec.IvParameterSpec
 
 class MainActivity : Activity() {
     private val mySup = MySupportClass()
@@ -83,10 +85,12 @@ class MainActivity : Activity() {
 
                 while (soc != null) {
                     try {
-                        val temp = dis.readByte()
-                        Log.d("receive message", "$temp")
+                        val iv = Base64.decode(dis.readUTF(), Base64.DEFAULT)
+                        val ivParamSpec = IvParameterSpec(iv)
+                        val msg = mySup.dec(Base64.decode(dis.readUTF(), Base64.DEFAULT), secKey, ivParamSpec)
+                        Log.d("receive message", "$msg")
 
-                        when (temp.toInt()) {
+                        when (msg) {
                             mySup.KAIGI_ON -> ledKaigi.value = true
                             mySup.KAIGI_OFF -> ledKaigi.value = false
                             mySup.STATE_RED -> {
