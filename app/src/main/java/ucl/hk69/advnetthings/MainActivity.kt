@@ -78,13 +78,17 @@ class MainActivity : Activity() {
                 var soc: Socket? = svSoc!!.accept()
                 val dis = DataInputStream(soc!!.getInputStream())
                 ledReceive.value = false
+                var secNo = 0
                 while (soc != null) {
                     try {
                         val iv = Base64.decode(dis.readUTF(), Base64.DEFAULT)
                         val ivParamSpec = IvParameterSpec(iv)
                         val msg = mySup.dec(dis.readUTF(), secKey, ivParamSpec)
 
-                        when (msg) {
+                        if(secNo+1 != msg/10) break
+
+                        secNo++
+                        when (msg%10) {
                             mySup.KAIGI_ON -> ledKaigi.value = true
                             mySup.KAIGI_OFF -> ledKaigi.value = false
                             mySup.STATE_RED -> {
